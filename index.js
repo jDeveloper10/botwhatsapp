@@ -244,22 +244,20 @@ const commands = {
         description: '📅 Programa un mensaje para enviar en una fecha y hora específica',
         execute: async (sock, jid, msg) => {
             const content = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-            const parts = content.split('\n');
-    
-            if (parts.length < 5) {
+            
+            // Nuevo formato: !programar número DD/MM/AAAA HH:MM mensaje
+            const match = content.match(/!programar\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})\s+(.+)/);
+            
+            if (!match) {
                 await sock.sendMessage(jid, { 
-                    text: `❌ Formato incorrecto. Usa:\n!programar\nNúmero (con código de país)\nAño\nMes\nDía\nHora\nMinuto\nTu mensaje aquí`
+                    text: `❌ Formato incorrecto. Usa:\n!programar número DD/MM/AAAA HH:MM mensaje\n\nEjemplo:\n!programar 50768246752 01/02/2024 15:30 Hola, este es un mensaje programado`
                 });
                 return;
             }
     
-            const targetNumber = parts[1].trim();
-            const year = parseInt(parts[2].trim());
-            const month = parseInt(parts[3].trim());
-            const day = parseInt(parts[4].trim());
-            const hour = parseInt(parts[5].trim());
-            const minute = parseInt(parts[6].trim());
-            const messageText = parts.slice(7).join('\n').trim();
+            const [_, targetNumber, dateStr, timeStr, messageText] = match;
+            const [day, month, year] = dateStr.split('/');
+            const [hour, minute] = timeStr.split(':');
     
             // Convertir fecha y hora
             const scheduledTime = new Date(year, month - 1, day, hour, minute);
