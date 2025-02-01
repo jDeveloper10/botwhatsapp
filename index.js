@@ -241,45 +241,51 @@ const commands = {
         }
     },
 programar: {
-    description: '📅 Programa un mensaje para enviar en una fecha y hora específica',
-    execute: async (sock, jid, msg) => {
-        const content = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-        
-        // Nuevo formato: !programar número DD/MM/AAAA HH:MM mensaje
-        const match = content.match(/!programar\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})\s+(.+)/);
-        
-        if (!match) {
-            await sock.sendMessage(jid, { 
-                text: `❌ Formato incorrecto. Usa:\n!programar número DD/MM/AAAA HH:MM mensaje\n\nEjemplo:\n!programar 50768246752 01/02/2024 15:30 Hola, este es un mensaje programado`
-            });
-            return;
-        }
-
-        const [_, targetNumber, dateStr, timeStr, messageText] = match;
-        const [day, month, year] = dateStr.split('/');
-        const [hour, minute] = timeStr.split(':');
-
-        // Convertir fecha y hora
-        const scheduledTime = new Date(year, month - 1, day, hour, minute);
-        if (isNaN(scheduledTime) || scheduledTime < new Date()) {
-            await sock.sendMessage(jid, { text: `❌ Fecha/hora inválida o ya pasada.` });
-            return;
-        }
-
-        // Programar mensaje
-        setTimeout(async () => {
-            try {
-                await sock.sendMessage(`${targetNumber}@s.whatsapp.net`, { text: messageText });
-            } catch (error) {
-                console.error('Error al enviar mensaje programado:', error);
+        description: '📅 Programa un mensaje para enviar en una fecha y hora específica',
+        execute: async (sock, jid, msg) => {
+            const content = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+    
+            // Nuevo formato: !programar número DD/MM/AAAA HH:MM mensaje
+            const match = content.match(/!programar\s+(\d+)\s+(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})\s+(.+)/);
+    
+            if (!match) {
+                await sock.sendMessage(jid, {
+                    text: `❌ Formato incorrecto. Usa:\n!programar número DD/MM/AAAA HH:MM mensaje\n\nEjemplo:\n!programar 50768246752 01/02/2025 15:30 Hola, este es un mensaje programado`
+                });
+                return;
             }
-        }, scheduledTime - new Date());
-
-        await sock.sendMessage(jid, { 
-            text: `✅ Mensaje programado:\n📅 Fecha: ${day}/${month}/${year}\n⏰ Hora: ${hour}:${minute}\n📞 Para: ${targetNumber}\n💬 Mensaje: ${messageText}`
-        });
-    }
-},
+    
+            const [_, targetNumber, dateStr, timeStr, messageText] = match;
+            const [day, month, year] = dateStr.split('/');
+            const [hour, minute] = timeStr.split(':');
+    
+            // Convertir fecha y hora al formato ISO
+            const scheduledTime = new Date(`${year}-${month}-${day}T${hour}:${minute}:00`);
+    
+            // Verificar si la fecha es válida y futura
+            if (isNaN(scheduledTime.getTime()) || scheduledTime <= new Date()) {
+                await sock.sendMessage(jid, { text: `❌ Fecha/hora inválida o ya pasada.` });
+                return;
+            }
+    
+            // Calcular el tiempo en milisegundos hasta la fecha programada
+            const delay = scheduledTime.getTime() - Date.now();
+    
+            // Programar el mensaje
+            setTimeout(async () => {
+                try {
+                    await sock.sendMessage(`${targetNumber}@s.whatsapp.net`, { text: messageText });
+                } catch (error) {
+                    console.error('Error al enviar mensaje programado:', error);
+                }
+            }, delay);
+    
+            await sock.sendMessage(jid, {
+                text: `✅ Mensaje programado:\n📅 Fecha: ${day}/${month}/${year}\n⏰ Hora: ${hour}:${minute}\n📞 Para: ${targetNumber}\n💬 Mensaje: ${messageText}`
+            });
+        }
+    },
+    
 
     vermensajes: {
         description: '📋 Ver todos los mensajes programados',
