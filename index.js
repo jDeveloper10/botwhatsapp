@@ -36,15 +36,15 @@ const CONFIG = {
     }
 };
 
-// Configuración de logger
+// Modificar la configuración del logger
 const logger = pino({ 
-    level: 'warn',
-    transport: {
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+    transport: process.env.NODE_ENV !== 'production' ? {
         target: 'pino-pretty',
         options: {
             colorize: true
         }
-    }
+    } : undefined
 });
 
 // Cache para mensajes procesados
