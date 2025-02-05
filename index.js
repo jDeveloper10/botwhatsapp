@@ -1,3 +1,4 @@
+// Importaciones
 const { 
     makeWASocket, 
     useMultiFileAuthState, 
@@ -5,68 +6,174 @@ const {
     downloadContentFromMessage 
 } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
-const fs = require('fs');
+const fs = require('fs').promises;
+const fsSync = require('fs');
 const pino = require('pino');
 const sharp = require('sharp');
 const path = require('path');
 const schedule = require('node-schedule');
 
-// Configuración básica
-const ADMIN_NUMBER = '50768246752';
-const logger = pino({ level: 'warn' });
-const processedMessages = new Set();
-const ALLOWED_GROUPS_FILE = './allowed_groups.json';
-const SCHEDULED_MESSAGES_FILE = './scheduled_messages.json';
-const COMMAND_PREFIX = '!';
-const STICKERS_DIR = './stickers';
-const TEMP_DIR = './temp';
+// Configuración
+const CONFIG = {
+    ADMIN_NUMBER: '50768246752',
+    COMMAND_PREFIX: '!',
+    DIRS: {
+        STICKERS: './stickers',
+        TEMP: './temp',
+        AUTH: './auth_info'
+    },
+    FILES: {
+        ALLOWED_GROUPS: path.join(__dirname, 'allowed_groups.json'),
+        SCHEDULED_MESSAGES: path.join(__dirname, 'scheduled_messages.json'),
+        AUTHORIZED_USERS: path.join(__dirname, 'authorized_users.json'),
+        WELCOME_MESSAGE: {
+            text: `¡Bienvenido/a a nuestro grupo! 🎉\n\n` +
+                 `📱 Para usar el bot, primero escribe *!activar*\n` +
+                 `📖 Luego usa *!help* para ver todos los comandos disponibles\n\n` +
+                 `✨ ¡Esperamos que disfrutes del grupo!`,
+            image: path.join(__dirname, 'assets', 'welcome.jpg')
+        }
+    }
+};
 
-// Crear directorios necesarios
-[STICKERS_DIR, TEMP_DIR].forEach(dir => {
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+// Configuración de logger
+const logger = pino({ 
+    level: 'warn',
+    transport: {
+        target: 'pino-pretty',
+        options: {
+            colorize: true
+        }
+    }
 });
 
-// Funciones de utilidad para mensajes programados
-const loadScheduledMessages = () => {
-    try {
-        return fs.existsSync(SCHEDULED_MESSAGES_FILE) 
-            ? JSON.parse(fs.readFileSync(SCHEDULED_MESSAGES_FILE, 'utf8')) 
-            : [];
-    } catch (error) {
-        console.error('Error al cargar mensajes programados:', error);
-        return [];
+// Cache para mensajes procesados
+const messageCache = new Map();
+
+// Utilidades
+const utils = {
+    async ensureDirectories() {
+        for (const dir of Object.values(CONFIG.DIRS)) {
+            await fs.mkdir(dir, { recursive: true });
+        }
+    },
+
+    async loadJsonFile(filepath, defaultValue = []) {
+        try {
+            const data = await fs.readFile(filepath, 'utf8');
+            return JSON.parse(data);
+        } catch (error) {
+            logger.warn(`Error loading ${filepath}: ${error.message}`);
+            return defaultValue;
+        }
+    },
+
+    async saveJsonFile(filepath, data) {
+        try {
+            await fs.writeFile(filepath, JSON.stringify(data, null, 2));
+        } catch (error) {
+            logger.error(`Error saving ${filepath}: ${error.message}`);
+        }
+    },
+
+    async downloadMediaMessage(message) {
+        const type = Object.keys(message.message)[0];
+        const content = message.message[type];
+        if (!content) throw new Error('No content found in message');
+
+        const stream = await downloadContentFromMessage(content, type.replace('Message', ''));
+        const chunks = [];
+        for await (const chunk of stream) {
+            chunks.push(chunk);
+        }
+        return Buffer.concat(chunks);
+    },
+
+    async convertToSticker(imagePath) {
+        const outputPath = path.join(CONFIG.DIRS.TEMP, `${Date.now()}.webp`);
+        await sharp(imagePath)
+            .resize(512, 512, {
+                fit: 'contain',
+                background: { r: 0, g: 0, b: 0, alpha: 0 }
+            })
+            .webp()
+            .toFile(outputPath);
+        return outputPath;
+    },
+
+    async isAuthorizedUser(number) {
+        try {
+            if (!number) return false;
+            if (isAdmin(number)) return true;
+            
+            const users = await utils.loadJsonFile(CONFIG.FILES.AUTHORIZED_USERS, []);
+            return users.includes(number);
+        } catch (error) {
+            logger.error(`Error checking authorized user: ${error.message}`);
+            return false;
+        }
+    },
+
+    async addAuthorizedUser(number) {
+        try {
+            if (!number) throw new Error('Invalid number');
+            
+            const users = await utils.loadJsonFile(CONFIG.FILES.AUTHORIZED_USERS, []);
+            if (!users.includes(number)) {
+                users.push(number);
+                await utils.saveJsonFile(CONFIG.FILES.AUTHORIZED_USERS, users);
+                logger.info(`User authorized: ${number}`);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            logger.error(`Error adding authorized user: ${error.message}`);
+            return false;
+        }
     }
 };
 
-const saveScheduledMessages = (messages) => {
-    try {
-        fs.writeFileSync(SCHEDULED_MESSAGES_FILE, JSON.stringify(messages, null, 2));
-    } catch (error) {
-        console.error('Error al guardar mensajes programados:', error);
+// Gestor de mensajes programados
+class ScheduledMessagesManager {
+    constructor(sock) {
+        this.sock = sock;
+        this.messages = new Map();
     }
-};
 
-// Funciones de utilidad para grupos permitidos
-const loadAllowedGroups = () => {
-    try {
-        return fs.existsSync(ALLOWED_GROUPS_FILE) 
-            ? JSON.parse(fs.readFileSync(ALLOWED_GROUPS_FILE, 'utf8')) 
-            : [];
-    } catch (error) {
-        console.error('Error al cargar grupos permitidos:', error);
-        return [];
+    async init() {
+        const savedMessages = await utils.loadJsonFile(CONFIG.FILES.SCHEDULED_MESSAGES);
+        for (const msg of savedMessages) {
+            this.schedule(msg);
+        }
     }
-};
 
-const saveAllowedGroups = (groups) => {
-    try {
-        fs.writeFileSync(ALLOWED_GROUPS_FILE, JSON.stringify(groups, null, 2));
-    } catch (error) {
-        console.error('Error al guardar grupos permitidos:', error);
+    schedule(messageData) {
+        const scheduledTime = new Date(messageData.scheduledTime);
+        if (scheduledTime <= new Date()) return;
+
+        const job = schedule.scheduleJob(scheduledTime, async () => {
+            try {
+                await this.sock.sendMessage(messageData.targetNumber, { text: messageData.message });
+                this.messages.delete(messageData.id);
+                await this.saveMessages();
+            } catch (error) {
+                logger.error(`Failed to send scheduled message: ${error.message}`);
+            }
+        });
+
+        this.messages.set(messageData.id, { ...messageData, job });
     }
-};
 
-let allowedGroups = loadAllowedGroups();
+    async saveMessages() {
+        const messages = Array.from(this.messages.values())
+            .map(({ job, ...msg }) => msg);
+        await utils.saveJsonFile(CONFIG.FILES.SCHEDULED_MESSAGES, messages);
+    }
+}
+
+// Comandos del bot
+// Configuración básica
+const processedMessages = new Set();
 
 // Datos del bot
 const data = {
@@ -88,7 +195,7 @@ const data = {
 };
 
 // Funciones de utilidad
-const isAdmin = (number) => number.includes(ADMIN_NUMBER);
+const isAdmin = (number) => number.includes(CONFIG.ADMIN_NUMBER);
 
 const parseDateTime = (dateTimeStr) => {
     const [dateStr, timeStr] = dateTimeStr.split(' ');
@@ -100,39 +207,6 @@ const parseDateTime = (dateTimeStr) => {
         throw new Error('Formato de fecha y hora inválido');
     }
     return date;
-};
-
-const downloadMediaMessage = async (message) => {
-    const type = Object.keys(message.message)[0];
-    const content = message.message[type];
-    
-    if (!content) throw new Error('No se encontró contenido en el mensaje');
-
-    const stream = await downloadContentFromMessage(content, type.replace('Message', ''));
-    let buffer = Buffer.from([]);
-    
-    for await (const chunk of stream) {
-        buffer = Buffer.concat([buffer, chunk]);
-    }
-    
-    return buffer;
-};
-
-const convertToSticker = async (imagePath) => {
-    const tempFile = path.join(TEMP_DIR, `${Date.now()}.webp`);
-    try {
-        await sharp(imagePath)
-            .resize(512, 512, {
-                fit: 'contain',
-                background: { r: 0, g: 0, b: 0, alpha: 0 }
-            })
-            .webp()
-            .toFile(tempFile);
-        return tempFile;
-    } catch (error) {
-        console.error('Error al convertir a sticker:', error);
-        throw error;
-    }
 };
 
 // Comandos de administrador
@@ -178,6 +252,24 @@ const adminCommands = {
 // Comandos generales
 const commands = {
     ...adminCommands,
+    activar: {
+        description: '🔓 Activa tu acceso al bot',
+        execute: async (sock, jid, msg, sender) => {
+            const number = sender.split('@')[0];
+            
+            if (await utils.isAuthorizedUser(number)) {
+                await sock.sendMessage(jid, { 
+                    text: '✅ Tu número ya está autorizado para usar el bot.' 
+                });
+                return;
+            }
+
+            await utils.addAuthorizedUser(number);
+            await sock.sendMessage(jid, { 
+                text: '✅ ¡Bienvenido! Tu número ha sido autorizado para usar el bot.\nUsa !help para ver los comandos disponibles.' 
+            });
+        }
+    },
     horarios: {
         description: '📅 Muestra los horarios de clases',
         execute: async (sock, jid) => {
@@ -216,23 +308,23 @@ const commands = {
                 }
 
                 console.log('Descargando imagen...');
-                const buffer = await downloadMediaMessage(msg);
+                const buffer = await utils.downloadMediaMessage(msg);
                 
                 console.log('Guardando imagen temporal...');
-                const tempPath = path.join(TEMP_DIR, `${Date.now()}.jpg`); 
-                fs.writeFileSync(tempPath, buffer);
+                const tempPath = path.join(CONFIG.DIRS.TEMP, `${Date.now()}.jpg`); 
+                await fs.writeFile(tempPath, buffer);
                 
                 console.log('Convirtiendo a sticker...');
-                const stickerPath = await convertToSticker(tempPath);
+                const stickerPath = await utils.convertToSticker(tempPath);
                 
                 console.log('Enviando sticker...');
                 await sock.sendMessage(jid, { 
-                    sticker: fs.readFileSync(stickerPath) 
+                    sticker: await fs.readFile(stickerPath) 
                 });
                 
                 // Limpiar archivos temporales
-                fs.unlinkSync(tempPath);
-                fs.unlinkSync(stickerPath);
+                await fs.unlink(tempPath);
+                await fs.unlink(stickerPath);
                 console.log('Proceso completado');
             } catch (error) {
                 console.error('Error al crear sticker:', error);
@@ -290,7 +382,7 @@ programar: {
     vermensajes: {
         description: '📋 Ver todos los mensajes programados',
         execute: async (sock, jid) => {
-            const messages = loadScheduledMessages();
+            const messages = await utils.loadJsonFile(CONFIG.FILES.SCHEDULED_MESSAGES);
             if (messages.length === 0) {
                 await sock.sendMessage(jid, { 
                     text: '📭 No hay mensajes programados' 
@@ -323,7 +415,7 @@ programar: {
                 return;
             }
 
-            const messages = loadScheduledMessages();
+            const messages = await utils.loadJsonFile(CONFIG.FILES.SCHEDULED_MESSAGES);
             const updatedMessages = messages.filter(msg => msg.id !== messageId);
 
             if (messages.length === updatedMessages.length) {
@@ -333,7 +425,7 @@ programar: {
                 return;
             }
 
-            saveScheduledMessages(updatedMessages);
+            await utils.saveJsonFile(CONFIG.FILES.SCHEDULED_MESSAGES, updatedMessages);
             await sock.sendMessage(jid, { 
                 text: '✅ Mensaje programado cancelado exitosamente' 
             });
@@ -345,7 +437,7 @@ programar: {
             const isAdminUser = isAdmin(sender);
             const availableCommands = Object.entries(commands)
                 .filter(([cmd, info]) => !adminCommands[cmd] || isAdminUser)
-                .map(([cmd, { description }]) => `*${COMMAND_PREFIX}${cmd}*\n└ ${description}`)
+                .map(([cmd, { description }]) => `*${CONFIG.COMMAND_PREFIX}${cmd}*\n└ ${description}`)
                 .join('\n\n');
             
             const helpText = `*🤖 COMANDOS DISPONIBLES*\n\n${availableCommands}`;
@@ -353,97 +445,225 @@ programar: {
         }
     }
 };
-// Función principal para iniciar el bot
-async function startBot() {
-    // Crear directorio de autenticación si no existe
-    if (!fs.existsSync('./auth_info')) fs.mkdirSync('./auth_info');
+// Agregar la función handleMessage antes de startBot()
+async function handleMessage(sock, msg, scheduledMessages) {
+    const sender = msg.key.participant || msg.key.remoteJid;
+    const content = msg.message?.conversation || 
+                   msg.message?.extendedTextMessage?.text || 
+                   msg.message?.imageMessage?.caption;
 
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
+    if (!content) return;
 
-    const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true,
-        logger,
-        browser: ['Programming Class Bot', 'Chrome', '1.0.0'],
-    });
+    // Permitir !activar sin autorización
+    if (content.toLowerCase() === '!activar') {
+        await commands.activar.execute(sock, msg.key.remoteJid, msg, sender);
+        return;
+    }
 
-    // Mostrar código QR para escanear
-    sock.ev.on('qr', qr => qrcode.generate(qr, { small: true }));
+    // Verificar autorización para otros comandos
+    if (!await utils.isAuthorizedUser(sender.split('@')[0])) {
+        await sock.sendMessage(msg.key.remoteJid, { 
+            text: '❌ No estás autorizado para usar el bot.\nUsa !activar para solicitar acceso.' 
+        });
+        return;
+    }
 
-    // Manejar actualizaciones de conexión
-    sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`Conexión cerrada: ${lastDisconnect?.error || 'Razón desconocida'}. Reconectando: ${shouldReconnect}`);
-            if (shouldReconnect) {
-                await startBot();
-            } else {
-                console.log('Sesión cerrada. Escanea el código QR.');
-                fs.existsSync('./auth_info') && fs.rmSync('./auth_info', { recursive: true, force: true });
-                await startBot();
-            }
-        } else if (connection === 'open') {
-            console.log('¡Conexión establecida!');
-        }
-    });
-
-    // Guardar credenciales cuando se actualicen
-    sock.ev.on('creds.update', saveCreds);
-
-    // Cargar y programar mensajes guardados al iniciar el bot
-    const scheduledMessages = loadScheduledMessages();
-    for (const msg of scheduledMessages) {
-        const scheduledTime = new Date(msg.scheduledTime);
-        if (scheduledTime > new Date()) {
-            schedule.scheduleJob(scheduledTime, async () => {
-                try {
-                    await sock.sendMessage(msg.targetNumber, { text: msg.message });
-                    
-                    // Eliminar el mensaje programado después de enviarlo
-                    const messages = loadScheduledMessages();
-                    const updatedMessages = messages.filter(m => m.id !== msg.id);
-                    saveScheduledMessages(updatedMessages);
-                } catch (error) {
-                    console.error('Error al enviar mensaje programado:', error);
-                }
+    // Procesar comandos autorizados
+    if (content.startsWith(CONFIG.COMMAND_PREFIX)) {
+        const [command, ...args] = content.slice(CONFIG.COMMAND_PREFIX.length).trim().toLowerCase().split(' ');
+        if (commands[command]) {
+            await commands[command].execute(sock, msg.key.remoteJid, msg, sender);
+        } else {
+            await sock.sendMessage(msg.key.remoteJid, { 
+                text: '❌ Comando no reconocido. Usa !help para ver los comandos disponibles.'
             });
         }
     }
+}
 
-    // Manejar mensajes entrantes
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify' || !messages?.length) return;
-        const msg = messages[0];
-        
-        // Evitar procesar mensajes duplicados o estados
-        if (processedMessages.has(msg.key.id) || msg.key.remoteJid === 'status@broadcast') return;
+// Agregar manejador de eventos de grupo
+function setupGroupHandlers(sock) {
+    sock.ev.on('group-participants.update', async ({ id, participants, action }) => {
+        if (action === 'add') {
+            try {
+                // Verificar si existe la imagen de bienvenida
+                if (!fsSync.existsSync(CONFIG.FILES.WELCOME_MESSAGE.image)) {
+                    logger.warn('Welcome image not found');
+                    // Enviar solo mensaje si no hay imagen
+                    await sock.sendMessage(id, { 
+                        text: CONFIG.FILES.WELCOME_MESSAGE.text 
+                    });
+                    return;
+                }
 
-        // Agregar mensaje al conjunto de procesados
-        processedMessages.add(msg.key.id);
-        setTimeout(() => processedMessages.delete(msg.key.id), 5 * 60 * 1000); // Eliminar después de 5 minutos
+                // Leer la imagen
+                const imageBuffer = await fs.readFile(CONFIG.FILES.WELCOME_MESSAGE.image);
 
-        const sender = msg.key.participant || msg.key.remoteJid;
-        const content = msg.message?.conversation || 
-                       msg.message?.extendedTextMessage?.text || 
-                       msg.message?.imageMessage?.caption;
-
-        // Procesar comandos
-        if (content && content.startsWith(COMMAND_PREFIX)) {
-            const [command, ...args] = content.slice(COMMAND_PREFIX.length).trim().toLowerCase().split(' ');
-            if (commands[command]) {
-                await commands[command].execute(sock, msg.key.remoteJid, msg, sender);
-            } else {
-                await sock.sendMessage(msg.key.remoteJid, { 
-                    text: '❌ Comando no reconocido. Usa !help para ver los comandos disponibles.'
-                });
+                for (const participant of participants) {
+                    // Enviar mensaje con imagen
+                    await sock.sendMessage(id, {
+                        image: imageBuffer,
+                        caption: CONFIG.FILES.WELCOME_MESSAGE.text,
+                        mentions: [participant] // Mencionar al nuevo participante
+                    });
+                }
+            } catch (error) {
+                logger.error('Error sending welcome message:', error);
+                // Intentar enviar solo mensaje si falla la imagen
+                try {
+                    await sock.sendMessage(id, { 
+                        text: CONFIG.FILES.WELCOME_MESSAGE.text 
+                    });
+                } catch (e) {
+                    logger.error('Failed to send fallback message:', e);
+                }
             }
         }
     });
 }
 
-// Iniciar el bot
-startBot().catch(err => {
-    console.error('Error al iniciar el bot:', err);
+// Función principal para iniciar el bot
+async function startBot() {
+    try {
+        // Crear archivos JSON si no existen
+        const defaultFiles = [
+            [CONFIG.FILES.SCHEDULED_MESSAGES, '[]'],
+            [CONFIG.FILES.ALLOWED_GROUPS, '[]'],
+            [CONFIG.FILES.AUTHORIZED_USERS, '[]']  // Agregar archivo de usuarios autorizados
+        ];
+
+        for (const [file, defaultContent] of defaultFiles) {
+            if (!fsSync.existsSync(file)) {
+                fsSync.writeFileSync(file, defaultContent);
+                logger.info(`Created file: ${file}`);
+            }
+        }
+
+        // Crear directorio assets si no existe
+        const assetsDir = path.dirname(CONFIG.FILES.WELCOME_MESSAGE.image);
+        if (!fsSync.existsSync(assetsDir)) {
+            fsSync.mkdirSync(assetsDir, { recursive: true });
+            logger.info(`Created directory: ${assetsDir}`);
+        }
+
+        await utils.ensureDirectories();
+        
+        const { state, saveCreds } = await useMultiFileAuthState(CONFIG.DIRS.AUTH);
+        
+        const sock = makeWASocket({
+            auth: state,
+            printQRInTerminal: true,
+            logger,
+            browser: ['Programming Class Bot', 'Chrome', '1.0.0'],
+            // Agregar estas configuraciones
+            markOnlineOnConnect: true,
+            getMessage: async (key) => {
+                return { conversation: 'hello' };
+            },
+            retryRequestDelayMs: 1000,
+            // Aumentar timeout
+            defaultQueryTimeoutMs: 60_000,
+            // Mejorar manejo de conexión
+            connectTimeoutMs: 60_000,
+            // Configuración para manejo de sesiones
+            patchMessageBeforeSending: (message) => {
+                const requiresPatch = !!(
+                    message.buttonsMessage 
+                    || message.templateMessage
+                    || message.listMessage
+                );
+                if (requiresPatch) {
+                    message = {
+                        viewOnceMessage: {
+                            message: {
+                                messageContextInfo: {
+                                    deviceListMetadataVersion: 2,
+                                    deviceListMetadata: {},
+                                },
+                                ...message,
+                            },
+                        },
+                    };
+                }
+                return message;
+            }
+        });
+
+        const scheduledMessages = new ScheduledMessagesManager(sock);
+        await scheduledMessages.init();
+
+        // Manejadores de eventos
+        sock.ev.on('qr', qr => qrcode.generate(qr, { small: true }));
+        sock.ev.on('creds.update', saveCreds);
+        
+        // Mejorar manejo de eventos de conexión
+        sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+            if (connection === 'close') {
+                const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+                logger.info(`Connection closed due to ${lastDisconnect?.error?.message}. Reconnecting: ${shouldReconnect}`);
+                
+                if (shouldReconnect) {
+                    // Esperar antes de reconectar
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    await startBot();
+                } else {
+                    logger.info('Connection closed permanently. Cleaning up...');
+                    // Limpiar sesión
+                    await fs.rm(CONFIG.DIRS.AUTH, { recursive: true, force: true });
+                    process.exit(0);
+                }
+            } else if (connection === 'connecting') {
+                logger.info('Connecting to WhatsApp...');
+            } else if (connection === 'open') {
+                logger.info('Successfully connected to WhatsApp');
+            }
+        });
+
+        // Manejo de mensajes mejorado con rate limiting
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type !== 'notify' || !messages?.length) return;
+            
+            const msg = messages[0];
+            if (msg.key.remoteJid === 'status@broadcast') return;
+
+            // Rate limiting simple
+            const messageId = msg.key.id;
+            if (messageCache.has(messageId)) return;
+            messageCache.set(messageId, true);
+            setTimeout(() => messageCache.delete(messageId), 300000); // 5 minutos
+
+            try {
+                await handleMessage(sock, msg, scheduledMessages);
+            } catch (error) {
+                logger.error(`Error handling message: ${error.message}`);
+            }
+        });
+
+        // Configurar manejador de grupos
+        setupGroupHandlers(sock);
+
+        // Manejar desconexiones inesperadas
+        process.on('SIGINT', async () => {
+            logger.info('Received SIGINT. Cleaning up...');
+            await sock.logout();
+            process.exit(0);
+        });
+
+        process.on('SIGTERM', async () => {
+            logger.info('Received SIGTERM. Cleaning up...');
+            await sock.logout();
+            process.exit(0);
+        });
+    } catch (error) {
+        logger.error('Error during initialization:', error);
+        // Esperar antes de reintentar
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        await startBot();
+    }
+}
+
+// Inicio del bot con manejo de errores
+startBot().catch(error => {
+    logger.fatal(error);
     process.exit(1);
 });
-//
