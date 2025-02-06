@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # En la raíz del proyecto: /d:/proyectos de visual studio/botWhatsapp/whatsapp-bot/.gitignore
 # Node modules
 node_modules/
@@ -37,3 +38,27 @@ yarn-error.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+=======
+# Dependencias
+node_modules/
+
+# Archivos de sesión y cache
+auth_info/
+*.log
+
+# Directorios temporales
+temp/
+stickers/
+
+# Archivos de configuración local
+.env
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de datos generados
+authorized_users.json
+scheduled_messages.json
+allowed_groups.json
+>>>>>>> flyio-new-files

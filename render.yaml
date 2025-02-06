@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: botwhatsapp
+    runtime: node
+    branch: main
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: PORT
+        value: 3000
