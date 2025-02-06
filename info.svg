@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600">
+    <!-- Fondo -->
+    <rect width="800" height="600" fill="#1a1a1a"/>
+    
+    <!-- Encabezado -->
+    <text x="400" y="60" fill="#ffffff" font-size="36" text-anchor="middle" font-family="Arial, sans-serif" font-weight="bold">
+        SERVICIOS DE STREAMING
+    </text>
+
+    <!-- Servicios -->
+    <g transform="translate(50, 100)">
+        <!-- Netflix -->
+        <rect x="0" y="0" width="700" height="80" fill="#E50914" rx="10"/>
+        <text x="20" y="45" fill="white" font-size="24" font-family="Arial, sans-serif">Netflix Premium 4K</text>
+        <text x="680" y="45" fill="white" font-size="24" text-anchor="end" font-family="Arial, sans-serif">$8.99</text>
+
+        <!-- Disney+ -->
+        <rect x="0" y="100" width="700" height="80" fill="#113CCF" rx="10"/>
+        <text x="20" y="145" fill="white" font-size="24" font-family="Arial, sans-serif">Disney+ Full HD</text>
+        <text x="680" y="145" fill="white" font-size="24" text-anchor="end" font-family="Arial, sans-serif">$6.99</text>
+
+        <!-- HBO -->
+        <rect x="0" y="200" width="700" height="80" fill="#5822B4" rx="10"/>
+        <text x="20" y="245" fill="white" font-size="24" font-family="Arial, sans-serif">HBO Max HD</text>
+        <text x="680" y="245" fill="white" font-size="24" text-anchor="end" font-family="Arial, sans-serif">$7.99</text>
+
+        <!-- Prime -->
+        <rect x="0" y="300" width="700" height="80" fill="#00A8E1" rx="10"/>
+        <text x="20" y="345" fill="white" font-size="24" font-family="Arial, sans-serif">Prime Video 4K</text>
+        <text x="680" y="345" fill="white" font-size="24" text-anchor="end" font-family="Arial, sans-serif">$7.49</text>
+
+        <!-- ViX -->
+        <rect x="0" y="400" width="700" height="80" fill="#FF5F00" rx="10"/>
+        <text x="20" y="445" fill="white" font-size="24" font-family="Arial, sans-serif">ViX+ Premium</text>
+        <text x="680" y="445" fill="white" font-size="24" text-anchor="end" font-family="Arial, sans-serif">$5.99</text>
+    </g>
+
+    <!-- Métodos de pago -->
+    <text x="400" y="550" fill="#ffffff" font-size="20" text-anchor="middle" font-family="Arial, sans-serif">
+        Aceptamos: Yappy | Transferencia | Efectivo
+    </text>
+</svg>
