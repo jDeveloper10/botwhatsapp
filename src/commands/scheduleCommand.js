@@ -1,38 +1,39 @@
 async function sendSchedule(sock, jid) {
     const scheduleMessage = `
-📅 *Class Schedules* 📅
+╭━━━《 📚 *HORARIOS DE CLASE* 📚 》━━━╮
 
-🕘 *Monday*:
-   - 09:00 AM - 10:00 AM: Math 📐
-   - 10:15 AM - 11:15 AM: Science 🔬
-   - 11:30 AM - 12:30 PM: History 📜
+🌅 *LUNES*
+┃ 09:00 - 10:00 ➟ Matemáticas 📐
+┃ 10:15 - 11:15 ➟ Ciencias 🔬
+┃ 11:30 - 12:30 ➟ Historia 📜
 
-🕘 *Tuesday*:
-   - 09:00 AM - 10:00 AM: English 📚
-   - 10:15 AM - 11:15 AM: Art 🎨
-   - 11:30 AM - 12:30 PM: Physical Education 🏃
+🌅 *MARTES*
+┃ 09:00 - 10:00 ➟ Inglés 🗣️
+┃ 10:15 - 11:15 ➟ Arte 🎨
+┃ 11:30 - 12:30 ➟ Educación Física 🏃
 
-🕘 *Wednesday*:
-   - 09:00 AM - 10:00 AM: Math 📐
-   - 10:15 AM - 11:15 AM: Science 🔬
-   - 11:30 AM - 12:30 PM: Music 🎵
+🌅 *MIÉRCOLES*
+┃ 09:00 - 10:00 ➟ Matemáticas 📐
+┃ 10:15 - 11:15 ➟ Ciencias 🔬
+┃ 11:30 - 12:30 ➟ Música 🎵
 
-🕘 *Thursday*:
-   - 09:00 AM - 10:00 AM: English 📚
-   - 10:15 AM - 11:15 AM: History 📜
-   - 11:30 AM - 12:30 PM: Art 🎨
+🌅 *JUEVES*
+┃ 09:00 - 10:00 ➟ Inglés 🗣️
+┃ 10:15 - 11:15 ➟ Historia 📜
+┃ 11:30 - 12:30 ➟ Arte 🎨
 
-🕘 *Friday*:
-   - 09:00 AM - 10:00 AM: Math 📐
-   - 10:15 AM - 11:15 AM: Physical Education 🏃
-   - 11:30 AM - 12:30 PM: Science 🔬
+🌅 *VIERNES*
+┃ 09:00 - 10:00 ➟ Matemáticas 📐
+┃ 10:15 - 11:15 ➟ Educación Física 🏃
+┃ 11:30 - 12:30 ➟ Ciencias 🔬
+
+╰━━━━━━━━━━━━━━━━━━━━━━╯
     `;
-    console.log("Sending schedule message to:", jid);
     try {
         await sock.sendMessage(jid, { text: scheduleMessage });
-        console.log("Schedule message sent successfully.");
+        console.log("✅ Horario enviado exitosamente.");
     } catch (error) {
-        console.error("Failed to send schedule message:", error);
+        console.error("❌ Error al enviar horario:", error);
     }
 }
 
