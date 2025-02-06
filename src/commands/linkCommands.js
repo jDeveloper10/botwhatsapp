@@ -14,11 +14,58 @@ if (!fs.existsSync(linksFile)) {
 }
 
 function loadLinks() {
-    return JSON.parse(fs.readFileSync(linksFile, 'utf8'));
+    try {
+        const fileContent = fs.readFileSync(linksFile, 'utf8');
+        const data = JSON.parse(fileContent);
+        
+        // Validar estructura del JSON
+        if (!data || !Array.isArray(data.links)) {
+            // Si el JSON está corrupto, crear estructura nueva
+            const defaultData = { links: [] };
+            fs.writeFileSync(linksFile, JSON.stringify(defaultData, null, 2));
+            return defaultData;
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('Error al cargar links:', error);
+        // Si hay error, devolver estructura vacía
+        const defaultData = { links: [] };
+        fs.writeFileSync(linksFile, JSON.stringify(defaultData, null, 2));
+        return defaultData;
+    }
 }
 
 function saveLinks(links) {
-    fs.writeFileSync(linksFile, JSON.stringify(links, null, 2));
+    try {
+        // Validar que links sea un objeto válido
+        if (!links || !Array.isArray(links.links)) {
+            throw new Error('Formato de links inválido');
+        }
+        
+        // Crear backup antes de guardar
+        const backupPath = linksFile + '.backup';
+        if (fs.existsSync(linksFile)) {
+            fs.copyFileSync(linksFile, backupPath);
+        }
+        
+        // Guardar nuevo contenido
+        fs.writeFileSync(linksFile, JSON.stringify(links, null, 2));
+        
+        // Si todo salió bien, eliminar backup
+        if (fs.existsSync(backupPath)) {
+            fs.unlinkSync(backupPath);
+        }
+    } catch (error) {
+        console.error('Error al guardar links:', error);
+        // Si hay error y existe backup, restaurarlo
+        const backupPath = linksFile + '.backup';
+        if (fs.existsSync(backupPath)) {
+            fs.copyFileSync(backupPath, linksFile);
+            fs.unlinkSync(backupPath);
+        }
+        throw error;
+    }
 }
 
 async function showLinks(sock, jid) {
@@ -32,14 +79,15 @@ async function showLinks(sock, jid) {
         }
 
         const linksList = data.links
-            .map((link, index) => `${index + 1}. 🔗 *${link.name}*\n   ${link.url}`)
-            .join('\n\n');
+            .map((link, index) => `┃ ${index + 1}. *${link.name}*\n┃ └ ${link.url}`)
+            .join('\n┃\n');
 
         const message = `
-📑 *Links Guardados* 📑
+╭━━━《 🔗 *LINKS GUARDADOS* 🔗 》━━━╮
 
 ${linksList}
-`;
+
+╰━━━━━━━━━━━━━━━━━━━━━━╯`;
 
         await sock.sendMessage(jid, { text: message });
     } catch (error) {
