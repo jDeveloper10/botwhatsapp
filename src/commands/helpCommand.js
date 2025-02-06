@@ -1,40 +1,54 @@
-async function sendHelp(sock, jid) {
-    const helpMessage = `
-🤖 *Comandos Disponibles* 🤖
+const commands = {
+    '!links': '🔗 Muestra todos los links importantes guardados',
+    '!addlink': '📎 Agrega un nuevo link al repositorio\n   └ Uso: !addlink nombre url',
+    '!schedule': '📅 Muestra los horarios de clases y actividades',
+    '!ping': '🏓 Verifica si el bot está activo y respondiendo',
+    '!sticker': '🖼️ Convierte una imagen o video en sticker\n   └ Envía una imagen/video con el comando como descripción',
+    '!programar': '⏰ Programa un mensaje para enviar más tarde\n   └ Uso: !programar +número HH:mm mensaje',
+    '!help': '💡 Muestra esta lista de comandos disponibles'
+};
 
-📝 *Comandos Básicos:*
-1. 📖 *!help* - Muestra este mensaje de ayuda
-2. 🏓 *!ping* - Responde con Pong!
-3. 📅 *!schedule* - Muestra los horarios de clase
-4. ℹ️ *!status* - Muestra el estado actual del bot
+const adminCommands = {
+    '!news': '📢 Programa una noticia para todos los grupos\n   └ Uso: !news HH:mm mensaje',
+    '!broadcast': '📣 Envía un mensaje a todos los grupos',
+    '!block': '🚫 Bloquea a un usuario específico'
+};
 
-🎯 *Comandos de Stickers:*
-5. 🖼️ *!sticker* - Crea un sticker
-   _Envía una imagen o video con la descripción !sticker_
-
-📨 *Mensajes Programados:*
-6. ⏰ *!schedule +número hora mensaje* - Programa un mensaje
-   _Ejemplo: !schedule +50712345678 15:30 Hola, ¿cómo estás?_
-
-🔗 *Links:*
-7. 📋 *!links* - Muestra todos los links guardados
-8. ➕ *!addlink nombre url* - Agrega un nuevo link
-
-👑 *Comandos de Admin:*
-9. 😴 *!sleep* - Pone el bot en modo reposo
-10. 🌅 *!wake* - Activa el bot
-11. 📰 *!news* - Programa una noticia para todos los grupos
-    _Ejemplo: !news 15:30 Nueva actualización_
-    _Puedes incluir una imagen con la noticia_
-`;
+async function showHelp(sock, jid, isAdmin = false) {
     try {
-        await sock.sendMessage(jid, { text: helpMessage });
-        console.log("Mensaje de ayuda enviado exitosamente.");
+        let helpText = `
+╭━━━━《 🤖 *COMANDOS DEL BOT* 🤖 》━━━━╮
+
+`;
+        
+        // Agregar comandos normales
+        Object.entries(commands).forEach(([cmd, desc]) => {
+            helpText += `┃ ${cmd}\n┃ ${desc}\n┃\n`;
+        });
+
+        // Agregar comandos de admin si el usuario es admin
+        if (isAdmin) {
+            helpText += `
+╰━━━━━━━━━━━━━━━━━━━━━━━╯
+╭━━━《 👑 *COMANDOS ADMIN* 👑 》━━━╮
+
+`;
+            Object.entries(adminCommands).forEach(([cmd, desc]) => {
+                helpText += `┃ ${cmd}\n┃ ${desc}\n┃\n`;
+            });
+        }
+
+        helpText += `╰━━━━━━━━━━━━━━━━━━━━━━━╯`;
+
+        await sock.sendMessage(jid, { text: helpText });
     } catch (error) {
-        console.error("Error al enviar mensaje de ayuda:", error);
+        console.error('Error al mostrar ayuda:', error);
+        await sock.sendMessage(jid, { 
+            text: '❌ Error al mostrar la ayuda.' 
+        });
     }
 }
 
 module.exports = {
-    sendHelp
+    showHelp
 };
