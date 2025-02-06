@@ -1,1 +1,39 @@
+# En la raíz del proyecto: /d:/proyectos de visual studio/botWhatsapp/whatsapp-bot/.gitignore
+# Node modules
 node_modules/
+
+# Auth files
+auth_info/
+auth_info_baileys/
+auth_info_multi/
+*.json.bak
+
+# Temporary files
+*.tmp
+temp/
+*.webp
+*.mp4
+*.jpg
+*.png
+
+# Environment variables
+.env
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
