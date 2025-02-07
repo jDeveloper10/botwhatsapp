@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const path = require('path');
 const fs = require('fs');
 const qrcode = require('qrcode');
@@ -68,29 +68,44 @@ async function sendQRByEmail(qr) {
 async function connectToWhatsApp() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+
+        // Mejorar el manejo de claves
         const sock = makeWASocket({
-            auth: state,
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore(state.keys, console.log)
+            },
             printQRInTerminal: true,
-            defaultQueryTimeoutMs: undefined,
+            defaultQueryTimeoutMs: 60000,
             connectTimeoutMs: 60000,
-            browser: ['WhatsApp Bot', 'Chrome', '1.0.0'],
             retryRequestDelayMs: 2000,
-            keepAliveIntervalMs: 10000,
-            emitOwnEvents: true,
+            browser: ['WhatsApp Bot', 'Chrome', '1.0.0'],
+            // Configuración mejorada para sesiones
+            generateHighQualityLinkPreview: true,
             markOnlineOnConnect: true,
-            syncFullHistory: false,
-            maxCachedMessages: 100,
-            patchMessageBeforeSending: true
+            msgRetryCounterCache: {},
+            patchMessageBeforeSending: true,
+            shouldIgnoreJid: jid => isJidBroadcast(jid),
+            // Manejo de caché
+            getMessage: async () => {
+                return { conversation: '' };
+            }
         });
 
+        // Mejorar manejo de credenciales
         sock.ev.on('creds.update', async () => {
             await saveCreds();
-            console.log('✅ Credenciales actualizadas');
+            console.log('✅ Credenciales actualizadas y guardadas');
         });
 
+        // Manejo mejorado de conexión
         sock.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect, qr } = update;
-            
+
+            if (connection === 'connecting') {
+                console.log('🔄 Conectando...');
+            }
+
             if (qr) {
                 console.log('🔄 Nuevo código QR detectado');
                 await sendQRByEmail(qr);
@@ -98,37 +113,26 @@ async function connectToWhatsApp() {
 
             if (connection === 'close') {
                 const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-                console.log('Conexión cerrada debido a ', lastDisconnect?.error, ', reconectando:', shouldReconnect);
+                console.log('Conexión cerrada debido a:', lastDisconnect?.error?.message);
                 
                 if (shouldReconnect) {
-                    connectionAttempts++;
                     if (connectionAttempts < MAX_RETRIES) {
-                        console.log(`Intento de reconexión ${connectionAttempts} de ${MAX_RETRIES}`);
+                        connectionAttempts++;
+                        console.log(`🔄 Reconectando (${connectionAttempts}/${MAX_RETRIES})...`);
                         setTimeout(connectToWhatsApp, 5000);
                     } else {
-                        console.log('Máximo de intentos alcanzado');
+                        console.log('❌ Máximo de intentos alcanzado');
                         process.exit(1);
                     }
+                } else {
+                    console.log('❌ Sesión cerrada, necesita nuevo QR');
+                    // Limpiar archivos de sesión
+                    clearSessionFiles();
                 }
             } else if (connection === 'open') {
                 console.log('✅ Conexión establecida exitosamente!');
                 connectionAttempts = 0;
-
-                try {
-                    const sessions = fs.readdirSync(AUTH_DIR).filter(file => file.endsWith('.json'));
-                    for (const session of sessions) {
-                        const filePath = path.join(AUTH_DIR, session);
-                        const stats = fs.statSync(filePath);
-                        const hoursSinceModified = (Date.now() - stats.mtimeMs) / (1000 * 60 * 60);
-                        
-                        if (hoursSinceModified > 24) {
-                            fs.unlinkSync(filePath);
-                            console.log(`Sesión antigua eliminada: ${session}`);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error limpiando sesiones:', error);
-                }
+                await cleanupOldSessions();
             }
         });
 
@@ -194,6 +198,41 @@ async function connectToWhatsApp() {
         if (connectionAttempts < MAX_RETRIES) {
             setTimeout(connectToWhatsApp, 5000);
         }
+    }
+}
+
+// Función para limpiar sesiones antiguas
+async function cleanupOldSessions() {
+    try {
+        const sessions = fs.readdirSync(AUTH_DIR);
+        const currentTime = Date.now();
+        
+        for (const file of sessions) {
+            const filePath = path.join(AUTH_DIR, file);
+            const stats = fs.statSync(filePath);
+            const fileAge = currentTime - stats.mtimeMs;
+            
+            // Eliminar archivos más antiguos de 24 horas
+            if (fileAge > 24 * 60 * 60 * 1000) {
+                fs.unlinkSync(filePath);
+                console.log(`🗑️ Sesión antigua eliminada: ${file}`);
+            }
+        }
+    } catch (error) {
+        console.error('Error limpiando sesiones:', error);
+    }
+}
+
+// Función para limpiar archivos de sesión
+function clearSessionFiles() {
+    try {
+        fs.readdirSync(AUTH_DIR).forEach(file => {
+            const filePath = path.join(AUTH_DIR, file);
+            fs.unlinkSync(filePath);
+            console.log(`🗑️ Archivo de sesión eliminado: ${file}`);
+        });
+    } catch (error) {
+        console.error('Error limpiando archivos de sesión:', error);
     }
 }
 
