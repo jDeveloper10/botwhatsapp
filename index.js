@@ -136,6 +136,17 @@ async function connectToWhatsApp() {
             if (!m.message) return;
 
             try {
+                // Manejar stickers primero
+                const messageType = Object.keys(m.message)[0];
+                const isMediaMessage = messageType === 'imageMessage' || messageType === 'videoMessage';
+                const caption = isMediaMessage ? m.message[messageType].caption?.toLowerCase() || '' : '';
+
+                if (isMediaMessage && caption === '!sticker') {
+                    console.log('Procesando comando sticker');
+                    await createSticker(sock, m);
+                    return;
+                }
+
                 const mentionedJids = m.message?.extendedTextMessage?.contextInfo?.mentionedJid;
                 if (mentionedJids && mentionedJids.length > 0) {
                     console.log('Menciones detectadas:', mentionedJids);
@@ -143,7 +154,6 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                const messageType = Object.keys(m.message)[0];
                 const text = messageType === 'conversation' ? m.message.conversation :
                             messageType === 'extendedTextMessage' ? m.message.extendedTextMessage.text :
                             (messageType === 'imageMessage' || messageType === 'videoMessage') ? 
