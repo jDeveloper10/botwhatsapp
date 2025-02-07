@@ -69,27 +69,22 @@ async function connectToWhatsApp() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
-        // Mejorar el manejo de claves
+        // Simplificar la configuración del socket
         const sock = makeWASocket({
-            auth: {
-                creds: state.creds,
-                keys: makeCacheableSignalKeyStore(state.keys, console.log)
-            },
+            auth: state,
             printQRInTerminal: true,
             defaultQueryTimeoutMs: 60000,
             connectTimeoutMs: 60000,
-            retryRequestDelayMs: 2000,
             browser: ['WhatsApp Bot', 'Chrome', '1.0.0'],
-            // Configuración mejorada para sesiones
-            generateHighQualityLinkPreview: true,
-            markOnlineOnConnect: true,
-            msgRetryCounterCache: {},
-            patchMessageBeforeSending: true,
-            shouldIgnoreJid: jid => isJidBroadcast(jid),
-            // Manejo de caché
+            // Configuración básica y estable
             getMessage: async () => {
                 return { conversation: '' };
-            }
+            },
+            markOnlineOnConnect: true,
+            generateHighQualityLinkPreview: false,
+            // Eliminar opciones problemáticas
+            // patchMessageBeforeSending: true,
+            // shouldIgnoreJid: jid => isJidBroadcast(jid),
         });
 
         // Mejorar manejo de credenciales
