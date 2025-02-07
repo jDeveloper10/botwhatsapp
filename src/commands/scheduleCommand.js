@@ -1,39 +1,39 @@
+const fs = require('fs');
+const path = require('path');
+
+const SCHEDULE_FILE = path.join(__dirname, '../data/schedule.json');
+
+// Ensure schedule file exists
+if (!fs.existsSync(SCHEDULE_FILE)) {
+    const defaultSchedule = {
+        schedule: []
+    };
+    fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(defaultSchedule, null, 2));
+}
+
 async function sendSchedule(sock, jid) {
-    const scheduleMessage = `
-╭━━━《 📚 *HORARIOS DE CLASE* 📚 》━━━╮
-
-🌅 *LUNES*
-┃ 09:00 - 10:00 ➟ Matemáticas 📐
-┃ 10:15 - 11:15 ➟ Ciencias 🔬
-┃ 11:30 - 12:30 ➟ Historia 📜
-
-🌅 *MARTES*
-┃ 09:00 - 10:00 ➟ Inglés 🗣️
-┃ 10:15 - 11:15 ➟ Arte 🎨
-┃ 11:30 - 12:30 ➟ Educación Física 🏃
-
-🌅 *MIÉRCOLES*
-┃ 09:00 - 10:00 ➟ Matemáticas 📐
-┃ 10:15 - 11:15 ➟ Ciencias 🔬
-┃ 11:30 - 12:30 ➟ Música 🎵
-
-🌅 *JUEVES*
-┃ 09:00 - 10:00 ➟ Inglés 🗣️
-┃ 10:15 - 11:15 ➟ Historia 📜
-┃ 11:30 - 12:30 ➟ Arte 🎨
-
-🌅 *VIERNES*
-┃ 09:00 - 10:00 ➟ Matemáticas 📐
-┃ 10:15 - 11:15 ➟ Educación Física 🏃
-┃ 11:30 - 12:30 ➟ Ciencias 🔬
-
-╰━━━━━━━━━━━━━━━━━━━━━━╯
-    `;
     try {
-        await sock.sendMessage(jid, { text: scheduleMessage });
-        console.log("✅ Horario enviado exitosamente.");
+        const data = JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf8'));
+        
+        if (!data.schedule || data.schedule.length === 0) {
+            await sock.sendMessage(jid, { text: '❌ No hay horarios programados.' });
+            return;
+        }
+
+        let message = '📅 *HORARIO DE ACTIVIDADES*\n\n';
+        
+        data.schedule.forEach(day => {
+            message += `*${day.day}*\n`;
+            day.activities.forEach(activity => {
+                message += `└ ${activity.time} - ${activity.description}\n`;
+            });
+            message += '\n';
+        });
+
+        await sock.sendMessage(jid, { text: message });
     } catch (error) {
-        console.error("❌ Error al enviar horario:", error);
+        console.error('Error al mostrar horario:', error);
+        await sock.sendMessage(jid, { text: '❌ Error al mostrar el horario.' });
     }
 }
 

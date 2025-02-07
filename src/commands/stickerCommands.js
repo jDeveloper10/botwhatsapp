@@ -1,98 +1,81 @@
-const sharp = require('sharp');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const fs = require('fs');
 const path = require('path');
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('ffmpeg-static');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const webp = require('node-webpmux');
+const sharp = require('sharp');
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+const TEMP_DIR = path.join(__dirname, '../../temp');
 
 async function createSticker(sock, message) {
-    const jid = message.key.remoteJid;
-    const mediaMessage = message.message.imageMessage || message.message.videoMessage;
-    let mediaPath = null;
-    let stickerPath = null;
-    
-    if (!mediaMessage) {
-        await sock.sendMessage(jid, { 
-            text: '❌ Por favor, envía una imagen o video con el comando !sticker como descripción' 
-        });
-        return;
-    }
-
     try {
-        await sock.sendMessage(jid, { 
-            text: '⏳ Procesando tu sticker... por favor espera' 
-        });
+        const messageType = Object.keys(message.message)[0];
+        const isVideo = messageType === 'videoMessage';
+        const isImage = messageType === 'imageMessage';
 
-        const mediaBuffer = await downloadMediaMessage(
-            message,
-            'buffer',
-            { },
-            { 
-                logger: console,
-                reuploadRequest: sock.updateMediaMessage
-            }
-        );
-
-        const tempPath = path.join(__dirname, 'temp');
-        stickerPath = path.join(tempPath, 'sticker.webp');
-        mediaPath = path.join(tempPath, mediaMessage.mimetype.startsWith('image') ? 'image.jpg' : 'video.mp4');
-
-        if (!fs.existsSync(tempPath)) {
-            fs.mkdirSync(tempPath, { recursive: true });
-        }
-
-        fs.writeFileSync(mediaPath, mediaBuffer);
-
-        if (mediaMessage.mimetype.startsWith('image')) {
-            await sharp(mediaPath)
-                .resize(512, 512, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-                .webp({ quality: 80 })
-                .toFile(stickerPath);
-        } else if (mediaMessage.mimetype.startsWith('video')) {
-            await new Promise((resolve, reject) => {
-                ffmpeg(mediaPath)
-                    .outputOptions([
-                        '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:-1:-1:color=black',
-                        '-vcodec', 'libwebp',
-                        '-lossless', '1',
-                        '-qscale', '0',
-                        '-preset', 'default',
-                        '-loop', '0',
-                        '-an', '-vsync', '0',
-                        '-s', '512:512'
-                    ])
-                    .duration(6)
-                    .output(stickerPath)
-                    .on('end', resolve)
-                    .on('error', reject)
-                    .run();
+        if (!isVideo && !isImage) {
+            await sock.sendMessage(message.key.remoteJid, { 
+                text: '❌ Envía una imagen o video con el comando !sticker' 
             });
+            return;
         }
 
-        const stickerBuffer = fs.readFileSync(stickerPath);
-        await sock.sendMessage(jid, { sticker: stickerBuffer });
-        await sock.sendMessage(jid, { 
-            text: '✅ ¡Sticker creado exitosamente!' 
+        // Notify processing
+        await sock.sendMessage(message.key.remoteJid, { 
+            text: '⏳ Procesando sticker...' 
         });
-    } catch (error) {
-        console.error("Error al crear sticker:", error);
-        await sock.sendMessage(jid, { 
-            text: '❌ Error al crear el sticker. Por favor, intenta nuevamente.' 
-        });
-    } finally {
-        // Limpiar archivos temporales
-        try {
-            if (mediaPath && fs.existsSync(mediaPath)) {
-                fs.unlinkSync(mediaPath);
-            }
-            if (stickerPath && fs.existsSync(stickerPath)) {
-                fs.unlinkSync(stickerPath);
-            }
-        } catch (error) {
-            console.error("Error al limpiar archivos temporales:", error);
+
+        // Download media
+        const buffer = await downloadMediaMessage(message, 'buffer', {});
+        const tempFile = path.join(TEMP_DIR, `temp_${Date.now()}`);
+        const outputFile = `${tempFile}.webp`;
+
+        if (isImage) {
+            // Process image
+            await sharp(buffer)
+                .resize(512, 512, {
+                    fit: 'contain',
+                    background: { r: 0, g: 0, b: 0, alpha: 0 }
+                })
+                .toFile(outputFile);
+        } else {
+            // Process video
+            fs.writeFileSync(`${tempFile}.mp4`, buffer);
+            await new Promise((resolve, reject) => {
+                ffmpeg(`${tempFile}.mp4`)
+                    .setFfmpegPath(require('@ffmpeg-installer/ffmpeg').path)
+                    .setFfprobePath(require('@ffprobe-installer/ffprobe').path)
+                    .outputOptions([
+                        "-vcodec", "libwebp",
+                        "-vf", "scale='min(320,iw)':min'(320,ih)':force_original_aspect_ratio=decrease,fps=15,pad=320:320:-1:-1:color=white@0.0,split[a][b];[a]palettegen=reserve_transparent=on:transparency_color=ffffff[p];[b][p]paletteuse",
+                        "-loop", "0",
+                        "-ss", "00:00:00",
+                        "-t", "00:00:10",
+                        "-preset", "default",
+                        "-an",
+                        "-vsync", "0"
+                    ])
+                    .toFormat('webp')
+                    .save(outputFile)
+                    .on('end', resolve)
+                    .on('error', reject);
+            });
+            fs.unlinkSync(`${tempFile}.mp4`);
         }
+
+        // Send sticker
+        await sock.sendMessage(message.key.remoteJid, { 
+            sticker: fs.readFileSync(outputFile)
+        });
+
+        // Cleanup
+        fs.unlinkSync(outputFile);
+
+    } catch (error) {
+        console.error('Error creating sticker:', error);
+        await sock.sendMessage(message.key.remoteJid, { 
+            text: '❌ Error al crear el sticker' 
+        });
     }
 }
 

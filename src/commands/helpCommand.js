@@ -1,38 +1,37 @@
-const commands = {
-    '!links': '🔗 Muestra todos los links importantes guardados',
-    '!addlink': '📎 Agrega un nuevo link al repositorio\n   └ Uso: !addlink nombre url',
-    '!schedule': '📅 Muestra los horarios de clases y actividades',
-    '!ping': '🏓 Verifica si el bot está activo y respondiendo',
-    '!sticker': '🖼️ Convierte una imagen o video en sticker\n   └ Envía una imagen/video con el comando como descripción',
-    '!programar': '⏰ Programa un mensaje para enviar más tarde\n   └ Uso: !programar +número HH:mm mensaje',
-    '!help': '💡 Muestra esta lista de comandos disponibles',
-    '!news': '📢 Programa una noticia para todos los grupos\n   └ Uso: !news HH:mm mensaje',
-    '!broadcast': '📣 Envía un mensaje a todos los grupos',
-    '!block': '🚫 Bloquea a un usuario específico'
+const showHelp = async (client, chatId) => {
+    const menu = `┌──『 *BOT DE PROGRAMACIÓN* 』
+│
+├─『 *COMANDOS BÁSICOS* 』
+│ • !help - 📚 Ver comandos
+│ • !ping - 🔄 Probar conexión
+│ • !schedule - 📅 Ver horario
+│ • !reminder - ⏰ Crear recordatorio
+│
+├─『 *GESTIÓN DE GRUPOS* 』
+│ • !setwelcome - 👋 Config. bienvenida
+│ • !poll - 📊 Crear votación
+│ • !vote - 🗳️ Votar
+│ • !news - 📢 Enviar noticia
+│
+├─『 *PROGRAMACIÓN* 』
+│ • !code - 💻 Ejecutar JavaScript
+│ • !docs - 📖 Buscar documentación
+│ • !github - 🔍 Buscar repositorios
+│ • !example - 📝 Ver ejemplos
+│
+├─『 *UTILIDADES* 』
+│ • !sticker - 🖼️ Crear sticker
+│ • !links - 🔗 Ver enlaces
+│ • !addlink - ➕ Agregar enlace
+│
+├─『 *ADMIN* 』
+│ • !status - ℹ️ Estado del bot
+│ • !maintenance - 🔧 Modo mant.
+│ • !sleep/!wake - 💤 Control bot
+│ • !kick/!promote - 👑 Gestión users
+└──────────────`;
+
+    await client.sendMessage(chatId, { text: menu });
 };
 
-async function showHelp(sock, jid) {
-    try {
-        let helpText = `
-╭━━━━《 🤖 *COMANDOS DEL BOT* 🤖 》━━━━╮
-
-`;
-        
-        Object.entries(commands).forEach(([cmd, desc]) => {
-            helpText += `┃ ${cmd}\n┃ ${desc}\n┃\n`;
-        });
-
-        helpText += `╰━━━━━━━━━━━━━━━━━━━━━━━╯`;
-
-        await sock.sendMessage(jid, { text: helpText });
-    } catch (error) {
-        console.error('Error al mostrar ayuda:', error);
-        await sock.sendMessage(jid, { 
-            text: '❌ Error al mostrar la ayuda.' 
-        });
-    }
-}
-
-module.exports = {
-    showHelp
-};
+module.exports = { showHelp };
